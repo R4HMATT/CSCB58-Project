@@ -1,0 +1,405 @@
+
+`timescale 1ns / 1ns // `timescale time_unit/time_precision
+
+module mark_2_proj(SW, CLOCK_50, HEX0, HEX1, HEX4, HEX5, KEY0, KEY1, KEY2, KEY3);
+	input CLOCK_50;
+	input KEY0, KEY1, KEY2, KEY3;
+	input [17:0]SW; // 15:0 is seed for the lsfr, 16 is reset for lsfr.
+	output [6:0] HEX0;
+	output [6:0] HEX1;
+	output [6:0] HEX4;
+	output [6:0] HEX5;
+	wire [3:0]hexin;
+	wire new_clock;
+	wire [1:0]rand_num;
+	wire [15:0]random_16;
+	wire [3:0]rate_count;
+	wire gd_bd;
+	wire ready_hex;
+	wire ready_accept;
+	wire [3:0]pass_fail_out;
+	wire enable;
+	wire [27:0]count1;
+	
+
+	//counter1 u0(CLOCK_50, enable, count1[27:0]);
+	//selector u1(SW[16], CLOCK_50, enable, count1[27:0]);
+	
+	clk_div div(SW[17],CLOCK_50, new_clock);
+	//clk_counter_max_set(SW[17:16], rate_count;)
+
+	lfsr r(SW[15:0], random_16, new_clock);
+	hex_display_control a(new_clock, random_16[1:0], hexin, ready_accept, ready_hex, gd_bd, pass_fail_out);
+	accept_key ak(new_clock, KEY0, KEY1, KEY2, KEY3, gd_bd, random_16[1:0], ready_hex, ready_accept);
+	score_counter score(new_clock, gd_bd, HEX4, HEX5);
+	hex_display dir(hexin,HEX0);
+	hex_display pf(pass_fail_out,HEX1);
+	
+
+endmodule
+
+
+
+/*
+module clk_div(
+, switches, clkin, clkout);
+	// max is how much the counter goes up by
+	//output reg [3:0]max
+/*
+	output reg clock_out = 0;
+	input clock_in;
+	input [1:0]switches;
+	reg [3:0] max;
+	reg [27:0] counter = 0;
+	*/
+/*
+	always @(*)
+		begin
+			if (switches[0])
+				max <= 28'd25000000;
+			else
+				max <= 28'd12500000;
+		end
+	
+	always@(posedge clock_in)
+		begin
+			if (count >= 28'd50000000)
+				count <= 28'b0;
+			else
+				count <= count + max;		
+		end
+		assign clock_out = (count >= 28'd50000000);
+		
+
+input switches;
+reg [24:0] counter;
+output reg clkout;
+input reset;
+input clkin;
+initial begin
+	counter = 0;
+	clkout = 0;
+end
+always @(posedge clkin or posedge reset) begin
+  if (reset)
+	counter <= 24999999;
+  else begin
+    if (counter == 0) begin
+        counter <= 24999999;
+        clkout <= ~clkout;
+    end else
+        counter <= counter -1;
+    end
+    end
+endmodule
+*/
+
+
+module clk_div(SW, Clk_in, Clk_out);
+input SW;
+// input ports
+input Clk_in;
+
+// output ports
+output Clk_out;
+
+// counter size calculation according to input and output frequencies
+parameter sys_clk = 50000000;	// 50 MHz system clock
+parameter clk_out = 1;
+
+
+//parameter clk_out = 1;	// 1 MHz clock output
+parameter max = sys_clk / (2*clk_out); // max-counter size
+
+reg [27:0]counter = 0; // 28-bit counter size
+//initial Clk_out = 1;
+always@(posedge Clk_in) begin
+	if (counter == max-1)
+		begin
+		counter <= 0;
+		//Clk_out <= ~Clk_out;
+		end
+	else
+		begin
+		counter <= counter + 1'd1;
+		end
+	end
+	assign Clk_out = (counter == max-1); 
+endmodule
+
+
+module lfsr (seed, out, clk);
+
+	
+  output reg [15:0] out;
+  input [15:0]seed;
+  input clk;
+
+  wire feedback;
+
+  initial out = seed;
+  assign feedback = ~(out[15] ^ out[13] ^ out[12] ^ out[10]) &1;
+  //assign feedback = ~(out[3] ^ out[2]);
+
+always @(posedge clk)
+  begin
+      out <= {out[14:0],feedback};
+  end
+endmodule
+
+
+
+module accept_key(clock, KEY0, KEY1, KEY2, KEY3, gd_bd, direction, ready, ready_out);
+	
+	//input [3:0]rate;
+	input clock;
+	// rate is the speed for the clock selected (difficulty of the game)
+	// ready is tsim:/lfsrhe input from hex_display_control which tells us whether we are ready for directions or not
+	input ready;
+	// gd_bd is a hex display output to show whether it was a pass or fail.
+	output reg gd_bd;
+	input [1:0]direction; // what direction the user has to put in
+	output reg ready_out;
+	      //left up   down  right
+	input KEY0, KEY1, KEY2, KEY3;
+
+	always @(posedge clock)
+		begin
+			if (ready == 1) begin
+				ready_out <= 1;
+				if (direction == 2'b00) begin//up
+					if (KEY2 == 1 && (!(KEY1||KEY3||KEY0) == 1))
+						gd_bd <= 1;
+					else
+						gd_bd <= 0;
+					end
+				else if (direction == 2'b01) begin // down
+					if (KEY1 == 1 && (!(KEY2||KEY3||KEY0) == 1))
+						gd_bd <= 1;
+					else
+						gd_bd <= 0;
+					end
+				if (direction == 2'b11)// right
+					begin
+					if (KEY0 == 1 && (!(KEY1||KEY3||KEY2) == 1))
+						gd_bd <= 1;
+					else
+						gd_bd <= 0;
+					end
+				if (direction == 2'b10)  //left
+					begin
+					if (KEY3 == 1 && (!(KEY1||KEY2||KEY0) == 1))
+						gd_bd <= 1;
+					else
+						gd_bd <= 0;
+					end
+				end
+		end
+endmodule
+
+
+
+
+//Module 2: Cases to choose the type of output
+
+module hex_display_control(clock, R, out,ready, ready_out, gd_bd_in, passfail_out);
+	// r is the random number that decides which msg (left, up, right, down we want)
+	// 2'b00 = up, 2'b01 = down, 2'b10 = left, 2'b11 = right
+	input clock;
+	output reg [3:0] passfail_out;
+	//output enable;
+	//output [3:0]outout;
+	output reg [3:0]out;	
+	input [1:0]R;
+	output reg ready_out = 1;
+	input ready;
+	input gd_bd_in;
+	//signals to the acceptkey module that a direction has been specified and is waiting for user 		to input
+	//input ready;
+	//assign enable = out;
+	
+	always @(posedge clock)
+		begin
+		//if (ready == 0) begin
+			// handles display for which directions the hex should display
+			ready_out <= 1;
+			if(R == 2'b00) begin
+				out <= 4'b1100;
+				ready_out <= 1; end
+			else if(R == 2'b01) begin
+				out <= 4'b0000; 
+				ready_out <= 1; end
+			else if(R == 2'b10) begin
+				out <= 4'b0110;
+				ready_out <= 1; end
+			else if(R == 2'b11) begin
+				out <= 4'b1010;
+				ready_out <= 1; end
+			if (ready == 1'b1)
+				begin
+				if (gd_bd_in == 1'b1)
+					passfail_out <= 4'b1001;
+				else if (gd_bd_in == 1'b0)
+					passfail_out <= 4'b0010;
+				end
+		end
+		/*
+		if (ready == 1) begin
+			if (gd_bd_in == 1) begin
+				ready_out <= 0;
+				out <= 4'b1001; end // P for pass
+			else if (gd_bd_in == 0) begin
+				ready_out <= 0;
+				out <= 4'b0010; end//F for fail
+		end
+		*/
+endmodule
+
+
+
+
+
+// for our required letters
+module hex_display(IN, OUT);
+    input [3:0] IN;
+	 output reg [6:0] OUT;
+	 
+	 always @(*)
+	 begin
+		case(IN[3:0])
+			// d
+			4'b0000: OUT = 7'b0100001;
+			// E
+			4'b0001: OUT = 7'b0000011;
+			// F
+			4'b0010: OUT = 7'b0001110;
+			// G
+			4'b0011: OUT = 7'b0000010;
+			// H
+			4'b0100: OUT = 7'b0001001;
+			// i
+			4'b0101: OUT = 7'b1111011;
+			// L
+			4'b0110: OUT = 7'b1000111;
+			// n
+			4'b0111: OUT = 7'b0100011;
+			// o
+			4'b1000: OUT = 7'b0100011;
+			// P
+			4'b1001: OUT = 7'b0001100;
+			// r
+			4'b1010: OUT = 7'b0101111;
+			// t
+			4'b1011: OUT = 7'b0000111;
+			// U
+			4'b1100: OUT = 7'b1000001;
+			// w part 1
+			4'b1101: OUT = 7'b1100111;
+			// w part 2
+			4'b1110: OUT = 7'b1100011;
+			
+			// unnecessary
+			4'b1111: OUT = 7'b1111111;
+			
+			default: OUT = 7'b0111111;
+		endcase
+
+	end
+endmodule
+
+module hex_display_num(IN, OUT);
+    input [3:0] IN;
+	 output reg [6:0] OUT;
+	 
+	 always @(*)
+	 begin
+		case(IN[3:0])
+			4'b0000: OUT = 7'b1000000;
+			4'b0001: OUT = 7'b1111001;
+			4'b0010: OUT = 7'b0100100;
+			4'b0011: OUT = 7'b0110000;
+			4'b0100: OUT = 7'b0011001;
+			4'b0101: OUT = 7'b0010010;
+			4'b0110: OUT = 7'b0000010;
+			4'b0111: OUT = 7'b1111000;
+			4'b1000: OUT = 7'b0000000;
+			4'b1001: OUT = 7'b0011000;
+			default: OUT = 7'b0111111;
+		endcase
+
+	end
+endmodule
+
+
+module counter1(clock, enable, count1);
+
+
+input clock;
+input enable;
+output [27:0] count1;
+reg [27:0]out = 27'b0;
+assign count1[27:0] = out [27:0];
+always @(posedge clock)
+	begin
+	if (enable == 1)
+		out <= 0;
+	else
+		out <= out + 1'b1;
+	end
+endmodule
+
+//Module 2: Cases to choose the type of output
+
+module selector(select, clock, enable, count1);
+input [1:0] select;
+input clock;
+input [27:0]count1;
+output enable;
+reg out = 1'b0;
+assign enable = out;
+always @(posedge clock)
+	begin
+		if (out == 1)
+			out = 0;
+		else
+			case (select)
+			2'b00: out = (count1 >= 1'b1)? 1'b1 : 1'b0;
+			2'b01: out = (count1 >= 28'd50000000)? 1'b1:1'b0;
+			2'b10: out = (count1 >= 28'd100000000)? 1'b1:1'b0;
+			2'b11: out = (count1 >= 28'd200000000)? 1'b1:1'b0;
+			default: out = 1'b0;
+			 endcase
+		end
+endmodule
+
+module score_counter(reset, clock_in, gd_bd, hex1, hex2);
+reg [3:0]first;
+reg [3:0]second;
+input reset;
+input gd_bd;
+input clock_in;
+output hex1;
+output hex2;
+
+
+
+hex_display_num h1(first, hex1);
+hex_display_num h2(second, hex2);
+
+always @ (posedge gd_bd or posedge reset)
+ begin
+  if (reset) begin
+   first <= 4'b0000;
+   second <= 4'b0000;
+  end
+   else if (first==4'b1001) begin  //x9 reached
+    first <= 4'b0000;
+     if (second == 4'b1001) //99 reached
+      second <= 4'b0000;
+      else
+       second <= second + 1;
+   end
+   else
+    first <= first + 1;
+  end
+endmodule
